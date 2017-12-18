@@ -1,8 +1,8 @@
-package gorpoor
+package v1
 
 import (
 	"errors"
-	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,9 +44,8 @@ type Worker interface {
 type BoxWorker struct {
 	WorkerID int64
 	StopChan chan struct{} // broadcast chan ,anyone recive must close this chanel
-
-	QuitW  chan struct{} // quit chan
-	Status int32
+	QuitW    chan struct{} // quit chan
+	Status   int32
 }
 
 func (s *BoxWorker) Init(getBusyLiving DeliverTask, getBusydie RestWorker) Worker {
@@ -66,14 +65,17 @@ WORKPOOL:
 			atomic.StoreInt32(&s.Status, STATUS_WAITING)
 		case _, ok := <-s.StopChan:
 			if !ok {
-				fmt.Println("work loop is stop")
+				log.Println("worker is stop")
 			} else {
 				close(s.StopChan)
+				log.Println("worker is stop")
 			}
+			atomic.StoreInt32(&s.Status, STATUS_STOP)
 			break WORKPOOL
 		case <-s.QuitW:
-			fmt.Println("worker [%d] is quit from pool", s.WorkerID)
+			log.Println("worker [%d] is quit from pool", s.WorkerID)
 			close(s.QuitW)
+			atomic.StoreInt32(&s.Status, STATUS_STOP)
 			break WORKPOOL
 		}
 	}
@@ -82,7 +84,7 @@ WORKPOOL:
 
 func (s *BoxWorker) Stop() Worker {
 	if atomic.LoadInt32(&s.Status) == STATUS_STOP {
-		return nil
+		return s
 	}
 	s.QuitW <- struct{}{}
 	atomic.StoreInt32(&s.Status, STATUS_STOP)
@@ -101,13 +103,16 @@ type WorkGoroutinePool struct {
 
 func NewWorkerPool(WorkorNumber int, TaskQueue int, gw GenericWorkor) *WorkGoroutinePool {
 	wp := &WorkGoroutinePool{}
-	wp.init(WorkorNumber, TaskQueue, gw)
+	wp.Init(WorkorNumber, TaskQueue, gw)
 	wp.StopChan = make(chan struct{}, 1)
 	go wp.Start()
 	return wp
 }
 
-func (wp *WorkGoroutinePool) init(WorkorNumber int, TaskQueue int, gw GenericWorkor) {
+func (wp *WorkGoroutinePool) Init(WorkorNumber int, TaskQueue int, gw GenericWorkor) {
+	if gw == nil {
+		gw = BoxGenericWorkor
+	}
 	wp.WorkerG = make(chan Worker, WorkorNumber)
 	wp.TaskG = make(chan Task, TaskQueue)
 	for index := 0; index < WorkorNumber; index++ {
@@ -115,6 +120,7 @@ func (wp *WorkGoroutinePool) init(WorkorNumber int, TaskQueue int, gw GenericWor
 		work.Init(wp.makeWorkerBusy, wp.makeWorkerRest)
 		wp.WorkerG <- work
 	}
+	//log.Printf("total [%d] worker is start \n", WorkorNumber)
 }
 
 func (wp *WorkGoroutinePool) makeWorkerBusy() chan Task {
@@ -128,19 +134,17 @@ func (wp *WorkGoroutinePool) makeWorkerRest(worker Worker) {
 func (wp *WorkGoroutinePool) Start() error {
 	defer func() {
 		wp.IsRunning = false
-		fmt.Println("workor loop is exit")
 	}()
 	if wp.IsRunning == true {
 		return ErrWorkPoolIsRuning
 	}
 	wp.IsRunning = true
-	println("pool start")
 WORKPOOL:
 	for {
 		select {
 		case _, ok := <-wp.StopChan:
 			if !ok {
-				fmt.Println("work loop is stop")
+				log.Println("work pool is stop")
 			} else {
 				close(wp.StopChan)
 			}
@@ -154,22 +158,21 @@ func (wp *WorkGoroutinePool) Stop() error {
 	if wp.IsRunning {
 		wp.StopChan <- struct{}{}
 	} else {
-		fmt.Println("work pool is stop")
+		log.Println("work pool is stop")
 	}
 	return nil
 }
 
 func (wp *WorkGoroutinePool) Accept(t Task) error {
-	//if wp.IsRunning {
-	println("start send task")
-	wp.TaskG <- t
-	println("task send ok")
-	//}
+	if wp.IsRunning {
+		wp.TaskG <- t
+		return nil
+	}
 	return nil
 }
 
 /*
-//cause the go-1.9.2 goreturns cannot fmt this file ,than disable this below
+//cause the go-1.9.2 goreturns cannot log this file ,than disable this below
 type GPool = *WorkGoroutinePool
 
 func NewGPool() GPool {

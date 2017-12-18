@@ -1,4 +1,4 @@
-package gorpoor
+package sample
 
 /*
 import "sync"
