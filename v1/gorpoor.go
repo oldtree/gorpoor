@@ -5,166 +5,142 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 const (
-	STATUS_START = iota
+	STATUS_INIT = iota
+	STATUS_START
 	STATUS_RUNNING
 	STATUS_STOP
-	STATUS_WAITING
 )
 
 var (
 	ErrWorkPoolIsRuning = errors.New("work pool is running")
 )
 
-type Task func() interface{}
-type DeliverTask func() chan Task
-type RestWorker func(Worker)
-type GenericWorkor func(stopChan chan struct{}) Worker
-
-func BoxGenericWorkor(stopChan chan struct{}) Worker {
-	return &BoxWorker{
-		StopChan: stopChan,
-		QuitW:    make(chan struct{}, 1),
-		Status:   STATUS_START,
-		WorkerID: time.Now().UnixNano(),
-	}
+type Tasker interface {
+	Exec() error
 }
 
-type Worker interface {
-	Init(DeliverTask, RestWorker) Worker
-	Start(DeliverTask, RestWorker) Worker
-	Stop() Worker
+type Task struct {
+	Params interface{}
+	Result interface{}
 }
 
-type BoxWorker struct {
-	WorkerID int64
-	StopChan chan struct{} // broadcast chan ,anyone receive must close this chanel
-	QuitW    chan struct{} // quit chan
-	Status   int32
-}
-
-func (s *BoxWorker) Init(getBusyLiving DeliverTask, getBusydie RestWorker) Worker {
-	go s.Start(getBusyLiving, getBusydie)
-	return s
-}
-
-func (s *BoxWorker) Start(busy DeliverTask, rest RestWorker) Worker {
-	atomic.StoreInt32(&s.Status, STATUS_START)
-WORKPOOL:
-	for {
-		select {
-		case letbusy := <-busy():
-			atomic.StoreInt32(&s.Status, STATUS_RUNNING)
-			letbusy()
-			//rest(s)
-			atomic.StoreInt32(&s.Status, STATUS_WAITING)
-		case _, ok := <-s.StopChan:
-			if !ok {
-				log.Println("worker is stop")
-			} else {
-				close(s.StopChan)
-				log.Println("worker is stop")
-			}
-			atomic.StoreInt32(&s.Status, STATUS_STOP)
-			break WORKPOOL
-		case <-s.QuitW:
-			log.Printf("worker [%d] is quit from pool \n", s.WorkerID)
-			close(s.QuitW)
-			atomic.StoreInt32(&s.Status, STATUS_STOP)
-			break WORKPOOL
-		}
-	}
+func (t *Task) Exec() error {
+	log.Println("task exec result ok")
 	return nil
 }
 
-func (s *BoxWorker) Stop() Worker {
-	if atomic.LoadInt32(&s.Status) == STATUS_STOP {
-		return s
+type Worker struct {
+	WorkerId int64
+	StopChan chan struct{}
+	TaskList chan Tasker
+
+	Status int64
+	Wg     *sync.WaitGroup
+}
+
+func (w *Worker) Init(index int64) {
+	atomic.StoreInt64(&w.Status, STATUS_INIT)
+	w.WorkerId = index
+	w.Wg.Add(1)
+	atomic.StoreInt64(&w.Status, STATUS_START)
+}
+
+func (w *Worker) Start() {
+	defer func() {
+		log.Println("worker [%d] is end \n", w.WorkerId)
+	}()
+	if atomic.LoadInt64(&w.Status) == STATUS_INIT || atomic.LoadInt64(&w.Status) == STATUS_START {
+		atomic.StoreInt64(&w.Status, STATUS_RUNNING)
+	} else {
+		return
 	}
-	s.QuitW <- struct{}{}
-	atomic.StoreInt32(&s.Status, STATUS_STOP)
-	return s
+	for {
+		select {
+		case <-w.StopChan:
+			w.Stop()
+			goto END
+		case t := <-w.TaskList:
+			log.Println("start exec new task", t.Exec())
+		}
+	}
+END:
+	log.Printf("worker [%d] is end \n", w.WorkerId)
+	return
+}
+
+func (w *Worker) Stop() {
+	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
+		return
+	}
+	atomic.StoreInt64(&w.Status, STATUS_STOP)
+	w.Wg.Done()
+	return
 }
 
 type WorkerPool struct {
-	WaitGroup sync.WaitGroup
-
-	TaskG    chan Task
-	WorkerG  chan Worker
+	TaskList chan Tasker
 	StopChan chan struct{}
 
-	IsRunning bool
+	WorkQueue []*Worker
+
+	Status int64
+	Wg     *sync.WaitGroup
 }
 
-func NewWorkerPool(WorkorNumber int, TaskQueue int, gw GenericWorkor) *WorkerPool {
-	wp := &WorkerPool{}
-	wp.Init(WorkorNumber, TaskQueue, gw)
-	wp.StopChan = make(chan struct{}, 1)
-	go wp.Start()
-	return wp
-}
-
-func (wp *WorkerPool) Init(WorkorNumber int, TaskQueue int, gw GenericWorkor) {
-	if gw == nil {
-		gw = BoxGenericWorkor
+func (w *WorkerPool) Init(number int, taskLength int) {
+	w.TaskList = make(chan Tasker, taskLength)
+	w.StopChan = make(chan struct{}, 1)
+	atomic.StoreInt64(&w.Status, STATUS_INIT)
+	w.WorkQueue = make([]*Worker, number, number)
+	w.Wg = new(sync.WaitGroup)
+	for index, _ := range w.WorkQueue {
+		w.WorkQueue[index] = new(Worker)
+		w.WorkQueue[index].Wg = w.Wg
+		w.WorkQueue[index].StopChan = w.StopChan
+		w.WorkQueue[index].TaskList = w.TaskList
+		w.WorkQueue[index].Init(int64(index))
+		go w.WorkQueue[index].Start()
 	}
-	wp.WorkerG = make(chan Worker, WorkorNumber)
-	wp.TaskG = make(chan Task, TaskQueue)
-	for index := 0; index < WorkorNumber; index++ {
-		work := gw(wp.StopChan)
-		work.Init(wp.makeWorkerBusy, wp.makeWorkerRest)
-		wp.WorkerG <- work
-	}
-	//log.Printf("total [%d] worker is start \n", WorkorNumber)
+	w.Wg.Add(number)
+	atomic.StoreInt64(&w.Status, STATUS_INIT)
+	return
 }
-
-func (wp *WorkerPool) makeWorkerBusy() chan Task {
-	return wp.TaskG
-}
-
-func (wp *WorkerPool) makeWorkerRest(worker Worker) {
-	wp.WorkerG <- worker
-}
-
-func (wp *WorkerPool) Start() error {
+func (w *WorkerPool) Start() {
 	defer func() {
-		wp.IsRunning = false
+		log.Println("work pool is end")
+		w.Stop()
 	}()
-	if wp.IsRunning == true {
-		return ErrWorkPoolIsRuning
-	}
-	wp.IsRunning = true
-WORKPOOL:
 	for {
 		select {
-		case _, ok := <-wp.StopChan:
-			if !ok {
-				log.Println("work pool is stop")
-			} else {
-				close(wp.StopChan)
-			}
-			break WORKPOOL
+		case <-w.StopChan:
+			w.Stop()
+			goto END
 		}
 	}
-	return nil
+END:
+	log.Println("work pool is stop")
+	return
+}
+func (w *WorkerPool) Stop() {
+	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
+		return
+	}
+	w.StopChan <- struct{}{}
+	close(w.StopChan)
+	close(w.TaskList)
+	atomic.StoreInt64(&w.Status, STATUS_STOP)
+	w.Wg.Wait()
+	return
 }
 
-func (wp *WorkerPool) Stop() error {
-	if wp.IsRunning {
-		wp.StopChan <- struct{}{}
-	} else {
+func (w *WorkerPool) AddTask(t Tasker) {
+	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
 		log.Println("work pool is stop")
+		return
 	}
-	return nil
-}
-
-func (wp *WorkerPool) Accept(t Task) error {
-	if wp.IsRunning {
-		wp.TaskG <- t
-		return nil
-	}
-	return nil
+	w.TaskList <- t
+	return
 }

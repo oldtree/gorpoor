@@ -84,14 +84,15 @@ func (w *WorkerPool) Init(number int, taskLength int) {
 	w.WorkNumber = number
 	w.WorkSlice = make([]*Worker, w.WorkNumber, w.WorkNumber)
 	w.Wg = new(sync.WaitGroup)
+	w.StopChan = make(chan struct{}, 1)
+	w.TaskList = make(chan Tasker, taskLength)
 	for index, _ := range w.WorkSlice {
+		w.WorkSlice[index] = new(Worker)
 		w.WorkSlice[index].Wg = w.Wg
 		w.WorkSlice[index].Init(index, taskLength)
 		go w.WorkSlice[index].Start()
 	}
 	w.Wg.Add(number)
-	w.StopChan = make(chan struct{}, 1)
-	w.TaskList = make(chan Tasker, taskLength)
 	atomic.StoreInt64(&w.Status, STATUS_INIT)
 	return
 }
