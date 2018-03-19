@@ -13,8 +13,6 @@ const (
 	STATUS_RUNNING
 	STATUS_STOP
 	STATUS_WAITING
-	STATUS_PAUSE
-	STATUS_RESTART
 )
 
 var (
@@ -170,21 +168,3 @@ func (wp *WorkerPool) Accept(t Task) error {
 	}
 	return nil
 }
-
-/*
-//cause the go-1.9.2 goreturns cannot log this file ,than disable this below
-type GPool = *WorkerPool
-
-func NewGPool() GPool {
-	g:= GPool(new(WorkerPool))
-	return g
-}
-
-func (g GPool) AddTask(t Task) {
-	g.Accept(t)
-}
-
-func (g GPool) StopTask() {
-	g.Stop()
-}
-*/
