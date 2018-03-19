@@ -70,11 +70,11 @@ WORKLOOP:
 		case _, ok := <-f.StopChan:
 			if ok {
 				close(f.StopChan)
-			}else{
-				log.
+			} else {
 			}
 		}
 	}
+	return nil
 }
 
 func (f *FightWorker) Stop() error {

@@ -43,7 +43,7 @@ type Worker interface {
 
 type BoxWorker struct {
 	WorkerID int64
-	StopChan chan struct{} // broadcast chan ,anyone recive must close this chanel
+	StopChan chan struct{} // broadcast chan ,anyone receive must close this chanel
 	QuitW    chan struct{} // quit chan
 	Status   int32
 }
@@ -73,7 +73,7 @@ WORKPOOL:
 			atomic.StoreInt32(&s.Status, STATUS_STOP)
 			break WORKPOOL
 		case <-s.QuitW:
-			log.Println("worker [%d] is quit from pool", s.WorkerID)
+			log.Printf("worker [%d] is quit from pool \n", s.WorkerID)
 			close(s.QuitW)
 			atomic.StoreInt32(&s.Status, STATUS_STOP)
 			break WORKPOOL
@@ -91,7 +91,7 @@ func (s *BoxWorker) Stop() Worker {
 	return s
 }
 
-type WorkGoroutinePool struct {
+type WorkerPool struct {
 	WaitGroup sync.WaitGroup
 
 	TaskG    chan Task
@@ -101,15 +101,15 @@ type WorkGoroutinePool struct {
 	IsRunning bool
 }
 
-func NewWorkerPool(WorkorNumber int, TaskQueue int, gw GenericWorkor) *WorkGoroutinePool {
-	wp := &WorkGoroutinePool{}
+func NewWorkerPool(WorkorNumber int, TaskQueue int, gw GenericWorkor) *WorkerPool {
+	wp := &WorkerPool{}
 	wp.Init(WorkorNumber, TaskQueue, gw)
 	wp.StopChan = make(chan struct{}, 1)
 	go wp.Start()
 	return wp
 }
 
-func (wp *WorkGoroutinePool) Init(WorkorNumber int, TaskQueue int, gw GenericWorkor) {
+func (wp *WorkerPool) Init(WorkorNumber int, TaskQueue int, gw GenericWorkor) {
 	if gw == nil {
 		gw = BoxGenericWorkor
 	}
@@ -123,15 +123,15 @@ func (wp *WorkGoroutinePool) Init(WorkorNumber int, TaskQueue int, gw GenericWor
 	//log.Printf("total [%d] worker is start \n", WorkorNumber)
 }
 
-func (wp *WorkGoroutinePool) makeWorkerBusy() chan Task {
+func (wp *WorkerPool) makeWorkerBusy() chan Task {
 	return wp.TaskG
 }
 
-func (wp *WorkGoroutinePool) makeWorkerRest(worker Worker) {
+func (wp *WorkerPool) makeWorkerRest(worker Worker) {
 	wp.WorkerG <- worker
 }
 
-func (wp *WorkGoroutinePool) Start() error {
+func (wp *WorkerPool) Start() error {
 	defer func() {
 		wp.IsRunning = false
 	}()
@@ -154,7 +154,7 @@ WORKPOOL:
 	return nil
 }
 
-func (wp *WorkGoroutinePool) Stop() error {
+func (wp *WorkerPool) Stop() error {
 	if wp.IsRunning {
 		wp.StopChan <- struct{}{}
 	} else {
@@ -163,7 +163,7 @@ func (wp *WorkGoroutinePool) Stop() error {
 	return nil
 }
 
-func (wp *WorkGoroutinePool) Accept(t Task) error {
+func (wp *WorkerPool) Accept(t Task) error {
 	if wp.IsRunning {
 		wp.TaskG <- t
 		return nil
@@ -173,10 +173,10 @@ func (wp *WorkGoroutinePool) Accept(t Task) error {
 
 /*
 //cause the go-1.9.2 goreturns cannot log this file ,than disable this below
-type GPool = *WorkGoroutinePool
+type GPool = *WorkerPool
 
 func NewGPool() GPool {
-	g:= GPool(new(WorkGoroutinePool))
+	g:= GPool(new(WorkerPool))
 	return g
 }
 
