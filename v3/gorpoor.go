@@ -15,6 +15,12 @@ const (
 	STATUS_STOP
 )
 
+type Execer func() error
+
+func (exec Execer) Exec() error {
+	return exec()
+}
+
 var randomWorld = rand.New(rand.NewSource(time.Now().Unix()))
 
 type Tasker interface {

@@ -18,6 +18,17 @@ var (
 	ErrWorkPoolIsRuning = errors.New("work pool is running")
 )
 
+func Exec() error {
+	log.Println("music")
+	return nil
+}
+
+type Execer func() error
+
+func (exec Execer) Exec() error {
+	return exec()
+}
+
 type Tasker interface {
 	Exec() error
 }

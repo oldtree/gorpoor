@@ -18,6 +18,13 @@ var (
 	ErrorTaskExec = errors.New("task exec error")
 )
 
+type Execer func() error
+
+func (exec Execer) Exec() error {
+	return exec()
+}
+
+
 type Tasker interface {
 	Exec() error
 }
@@ -32,7 +39,7 @@ type Worker struct {
 	StopChan chan struct{}
 
 	TaskChan       chan Tasker
-	WorkerBackChan chan Worker
+	WorkerBackChan chan *Worker
 
 	Wg     *sync.WaitGroup
 	Status int64
@@ -57,6 +64,7 @@ func (w *Worker) Start() {
 			goto END
 		case t := <-w.TaskChan:
 			log.Println("task exec ", t.Exec())
+			w.WorkerBackChan <- w
 		}
 	}
 END:
@@ -76,7 +84,7 @@ func (w *Worker) Stop() {
 type WorkorPool struct {
 	TaskList    chan Tasker
 	Status      int64
-	Worker      chan Worker
+	Worker      chan *Worker
 	WorkorQueue []*Worker
 	Wg          *sync.WaitGroup
 
@@ -84,9 +92,14 @@ type WorkorPool struct {
 }
 
 func (w *WorkorPool) Init(number int, taskLength int) {
-	w.Worker = make(chan Worker, number)
+	w.Worker = make(chan *Worker, number)
 	w.Wg = new(sync.WaitGroup)
 	w.WorkorQueue = make([]*Worker, number)
+	for index, _ := range w.WorkorQueue {
+		w.WorkorQueue[index] = new(Worker)
+		w.WorkorQueue[index].Init(index)
+		go w.WorkorQueue[index].Start()
+	}
 	w.TaskList = make(chan Tasker, taskLength)
 	atomic.StoreInt64(&w.Status, STATUS_INIT)
 	w.StopChan = make(chan struct{}, 1)
