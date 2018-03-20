@@ -61,24 +61,30 @@ func (w *Worker) Init(index int64) {
 
 func (w *Worker) Start() {
 	defer func() {
-		log.Println("worker [%d] is end \n", w.WorkerId)
+		w.Stop()
+		//log.Printf("worker [%d] is end statu [%d]\n", w.WorkerId, w.Status)
 	}()
-	if atomic.LoadInt64(&w.Status) == STATUS_INIT || atomic.LoadInt64(&w.Status) == STATUS_START {
+	if atomic.LoadInt64(&w.Status) == STATUS_START {
 		atomic.StoreInt64(&w.Status, STATUS_RUNNING)
-	} else {
-		return
 	}
+	var err error
 	for {
 		select {
 		case <-w.StopChan:
-			w.Stop()
 			goto END
-		case t := <-w.TaskList:
-			log.Println("start exec new task", t.Exec())
+		case t, ok := <-w.TaskList:
+
+			if ok && t != nil {
+				err = t.Exec()
+				if err != nil {
+					log.Println("exec task error", err.Error())
+				}
+			} else {
+				goto END
+			}
 		}
 	}
 END:
-	log.Printf("worker [%d] is end \n", w.WorkerId)
 	return
 }
 
@@ -99,6 +105,8 @@ type WorkerPool struct {
 
 	Status int64
 	Wg     *sync.WaitGroup
+
+	Protect sync.Mutex
 }
 
 func (w *WorkerPool) Init(number int, taskLength int) {
@@ -115,43 +123,42 @@ func (w *WorkerPool) Init(number int, taskLength int) {
 		w.WorkQueue[index].Init(int64(index))
 		go w.WorkQueue[index].Start()
 	}
-	w.Wg.Add(number)
+
 	atomic.StoreInt64(&w.Status, STATUS_INIT)
 	return
 }
 func (w *WorkerPool) Start() {
 	defer func() {
-		log.Println("work pool is end")
-		w.Stop()
 	}()
 	for {
 		select {
 		case <-w.StopChan:
-			w.Stop()
 			goto END
 		}
 	}
 END:
-	log.Println("work pool is stop")
 	return
 }
 func (w *WorkerPool) Stop() {
+	w.Protect.Lock()
+	defer w.Protect.Unlock()
 	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
 		return
 	}
 	w.StopChan <- struct{}{}
+	atomic.StoreInt64(&w.Status, STATUS_STOP)
 	close(w.StopChan)
 	close(w.TaskList)
-	atomic.StoreInt64(&w.Status, STATUS_STOP)
 	w.Wg.Wait()
 	return
 }
 
 func (w *WorkerPool) AddTask(t Tasker) {
 	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
-		log.Println("work pool is stop")
 		return
 	}
+	w.Protect.Lock()
+	defer w.Protect.Unlock()
 	w.TaskList <- t
 	return
 }
