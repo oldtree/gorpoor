@@ -24,7 +24,6 @@ func (exec Execer) Exec() error {
 	return exec()
 }
 
-
 type Tasker interface {
 	Exec() error
 }
@@ -48,27 +47,35 @@ type Worker struct {
 func (w *Worker) Init(index int) {
 	w.WorkerId = int64(index)
 	w.TaskChan = make(chan Tasker, 1)
+	w.WorkerBackChan <- w
+	w.Wg.Add(1)
 	atomic.StoreInt64(&w.WorkerId, STATUS_INIT)
 }
 
 func (w *Worker) Start() {
 	defer func() {
-		log.Printf("work [%d] loop is end \n", w.WorkerId)
+		//log.Println("stop worker ", w.WorkerId)
+		w.Stop()
 		return
 	}()
 	atomic.StoreInt64(&w.Status, STATUS_RUNNING)
+	var err error
 	for {
 		select {
 		case <-w.StopChan:
-			w.Stop()
 			goto END
-		case t := <-w.TaskChan:
-			log.Println("task exec ", t.Exec())
+		case t, ok := <-w.TaskChan:
+			if ok && t != nil {
+				err = t.Exec()
+				if err != nil {
+					log.Println("task exec error : ", err.Error())
+				}
+			}
 			w.WorkerBackChan <- w
 		}
 	}
 END:
-	log.Printf("work [%d] loop is end \n", w.WorkerId)
+	return
 }
 
 func (w *Worker) Stop() {
@@ -81,34 +88,38 @@ func (w *Worker) Stop() {
 	return
 }
 
-type WorkorPool struct {
+type WorkerPool struct {
 	TaskList    chan Tasker
 	Status      int64
 	Worker      chan *Worker
-	WorkorQueue []*Worker
+	WorkerQueue []*Worker
 	Wg          *sync.WaitGroup
-
-	StopChan chan struct{}
+	Protect     sync.Mutex
+	StopChan    chan struct{}
 }
 
-func (w *WorkorPool) Init(number int, taskLength int) {
+func (w *WorkerPool) Init(number int, taskLength int) {
 	w.Worker = make(chan *Worker, number)
 	w.Wg = new(sync.WaitGroup)
-	w.WorkorQueue = make([]*Worker, number)
-	for index, _ := range w.WorkorQueue {
-		w.WorkorQueue[index] = new(Worker)
-		w.WorkorQueue[index].Init(index)
-		go w.WorkorQueue[index].Start()
-	}
-	w.TaskList = make(chan Tasker, taskLength)
-	atomic.StoreInt64(&w.Status, STATUS_INIT)
+	w.WorkerQueue = make([]*Worker, number)
 	w.StopChan = make(chan struct{}, 1)
+	w.TaskList = make(chan Tasker, taskLength)
+	for index, _ := range w.WorkerQueue {
+		newWorker := new(Worker)
+		newWorker.Wg = w.Wg
+		newWorker.WorkerBackChan = w.Worker
+		newWorker.StopChan = w.StopChan
+		newWorker.Init(index)
+		w.WorkerQueue[index] = newWorker
+		go newWorker.Start()
+	}
+	atomic.StoreInt64(&w.Status, STATUS_INIT)
 	return
 }
 
-func (w *WorkorPool) Start() {
+func (w *WorkerPool) Start() {
 	defer func() {
-		log.Println("work pool is end")
+		//log.Println("work pool is end")
 	}()
 	atomic.StoreInt64(&w.Status, STATUS_START)
 	for {
@@ -116,27 +127,33 @@ func (w *WorkorPool) Start() {
 		case <-w.StopChan:
 			goto END
 		case t := <-w.TaskList:
-			worker := <-w.Worker
-			worker.TaskChan <- t
+			worker, ok := <-w.Worker
+			if ok && worker != nil {
+				worker.TaskChan <- t
+			}
 		}
 	}
 END:
-	log.Println("work pool is end")
+	return
 }
 
-func (w *WorkorPool) Stop() {
+func (w *WorkerPool) Stop() {
+	w.Protect.Lock()
+	defer w.Protect.Unlock()
 	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
 		return
 	}
 	atomic.StoreInt64(&w.Status, STATUS_STOP)
 	close(w.StopChan)
+	w.Wg.Wait()
 	close(w.TaskList)
 	close(w.Worker)
-	w.Wg.Wait()
 	return
 }
 
-func (w *WorkorPool) AddTask(t Tasker) {
+func (w *WorkerPool) AddTask(t Tasker) {
+	w.Protect.Lock()
+	defer w.Protect.Unlock()
 	if atomic.LoadInt64(&w.Status) != STATUS_RUNNING {
 		return
 	}

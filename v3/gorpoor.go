@@ -40,7 +40,7 @@ func (t *Task) Exec() error {
 type Worker struct {
 	WorkerId int64
 	TaskList chan Tasker
-
+	Status   int64
 	StopChan chan struct{}
 	Wg       *sync.WaitGroup
 }
@@ -48,6 +48,8 @@ type Worker struct {
 func (w *Worker) Init(index int, taskLength int) {
 	w.WorkerId = int64(index)
 	w.TaskList = make(chan Tasker, taskLength)
+	atomic.StoreInt64(&w.Status, STATUS_INIT)
+	w.Wg.Add(1)
 }
 
 func (w *Worker) Start() {
@@ -71,6 +73,11 @@ func (w *Worker) Start() {
 }
 
 func (w *Worker) Stop() {
+	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
+		return
+	}
+	atomic.StoreInt64(&w.Status, STATUS_STOP)
+	close(w.TaskList)
 	w.Wg.Done()
 }
 
@@ -98,7 +105,6 @@ func (w *WorkerPool) Init(number int, taskLength int) {
 		w.WorkSlice[index].Init(index, taskLength)
 		go w.WorkSlice[index].Start()
 	}
-	w.Wg.Add(number)
 	atomic.StoreInt64(&w.Status, STATUS_INIT)
 	return
 }

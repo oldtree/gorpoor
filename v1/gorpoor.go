@@ -116,11 +116,12 @@ func (w *WorkerPool) Init(number int, taskLength int) {
 	w.WorkQueue = make([]*Worker, number, number)
 	w.Wg = new(sync.WaitGroup)
 	for index, _ := range w.WorkQueue {
-		w.WorkQueue[index] = new(Worker)
-		w.WorkQueue[index].Wg = w.Wg
-		w.WorkQueue[index].StopChan = w.StopChan
-		w.WorkQueue[index].TaskList = w.TaskList
-		w.WorkQueue[index].Init(int64(index))
+		newWorker := new(Worker)
+		newWorker.Wg = w.Wg
+		newWorker.StopChan = w.StopChan
+		newWorker.TaskList = w.TaskList
+		newWorker.Init(int64(index))
+		w.WorkQueue[index] = newWorker
 		go w.WorkQueue[index].Start()
 	}
 
@@ -154,11 +155,11 @@ func (w *WorkerPool) Stop() {
 }
 
 func (w *WorkerPool) AddTask(t Tasker) {
+	w.Protect.Lock()
+	defer w.Protect.Unlock()
 	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
 		return
 	}
-	w.Protect.Lock()
-	defer w.Protect.Unlock()
 	w.TaskList <- t
 	return
 }
