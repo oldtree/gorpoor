@@ -1,19 +1,23 @@
 package v2
 
 import (
+	//"log"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-var resultmap = new(sync.Map)
+var result int64
+var wg sync.WaitGroup
 
 type MyTask struct {
-	Id int
+	Id int64
 }
 
 func (m *MyTask) Exec() error {
-	resultmap.Store(m.Id, true)
+	atomic.AddInt64(&result, m.Id)
+	wg.Done()
 	return nil
 }
 
@@ -21,7 +25,7 @@ func Test_process(t *testing.T) {
 	w := new(WorkerPool)
 	w.Init(10, 10)
 	go w.Start()
-	time.Sleep(time.Second * 1)
+	time.Sleep(time.Second * 2)
 	w.Stop()
 }
 
@@ -29,15 +33,12 @@ func Test_addtask(t *testing.T) {
 	w := new(WorkerPool)
 	w.Init(10, 10)
 	go w.Start()
-
 	for index := 0; index < 1000; index++ {
-		w.AddTask(&MyTask{Id: index})
+		wg.Add(1)
+		w.AddTask(&MyTask{Id: int64(index)})
 	}
-	itf := func(key interface{}, value interface{}) bool {
-		return true
-	}
-	resultmap.Range(itf)
-	time.Sleep(time.Second * 2)
+	wg.Wait()
+	//log.Println("result : ", result)
 	w.Stop()
 }
 
@@ -45,54 +46,79 @@ func Benchmark_work_10_10(b *testing.B) {
 	w := new(WorkerPool)
 	w.Init(10, 10)
 	go w.Start()
-	defer w.Stop()
+
 	for index := 0; index < b.N; index++ {
-		w.AddTask(&MyTask{Id: index})
+		wg.Add(1)
+		w.AddTask(&MyTask{Id: int64(index)})
 	}
-	itf := func(key interface{}, value interface{}) bool {
-		return true
-	}
-	resultmap.Range(itf)
+	wg.Wait()
+	//log.Println("result : ", result)
+	w.Stop()
 }
 
 func Benchmark_work_10_100(b *testing.B) {
 	w := new(WorkerPool)
 	w.Init(10, 100)
 	go w.Start()
-	defer w.Stop()
 	for index := 0; index < b.N; index++ {
-		w.AddTask(&MyTask{Id: index})
+		wg.Add(1)
+		w.AddTask(&MyTask{Id: int64(index)})
 	}
-	itf := func(key interface{}, value interface{}) bool {
-		return true
-	}
-	resultmap.Range(itf)
+	wg.Wait()
+	//log.Println("result : ", result)
+	w.Stop()
 }
 
 func Benchmark_work_100_100(b *testing.B) {
 	w := new(WorkerPool)
 	w.Init(100, 100)
 	go w.Start()
-	defer w.Stop()
 	for index := 0; index < b.N; index++ {
-		w.AddTask(&MyTask{Id: index})
+		wg.Add(1)
+		w.AddTask(&MyTask{Id: int64(index)})
 	}
-	itf := func(key interface{}, value interface{}) bool {
-		return true
-	}
-	resultmap.Range(itf)
+	wg.Wait()
+	//log.Println("result : ", result)
+	w.Stop()
 }
 
 func Benchmark_work_100_1000(b *testing.B) {
 	w := new(WorkerPool)
 	w.Init(10, 1000)
 	go w.Start()
-	defer w.Stop()
+
 	for index := 0; index < b.N; index++ {
-		w.AddTask(&MyTask{Id: index})
+		wg.Add(1)
+		w.AddTask(&MyTask{Id: int64(index)})
 	}
-	itf := func(key interface{}, value interface{}) bool {
-		return true
+	wg.Wait()
+	//log.Println("result : ", result)
+	w.Stop()
+}
+
+func Benchmark_work_100_10000(b *testing.B) {
+	w := new(WorkerPool)
+	w.Init(10, 10000)
+	go w.Start()
+	for index := 0; index < b.N; index++ {
+		wg.Add(1)
+		w.AddTask(&MyTask{Id: int64(index)})
 	}
-	resultmap.Range(itf)
+	wg.Wait()
+	//log.Println("result : ", result)
+	w.Stop()
+}
+
+func Benchmark_work_1000_10000(b *testing.B) {
+	w := new(WorkerPool)
+	w.Init(100, 10000)
+	go w.Start()
+
+	for index := 0; index < b.N; index++ {
+		wg.Add(1)
+		w.AddTask(&MyTask{Id: int64(index)})
+	}
+	wg.Wait()
+	//log.Println("result : ", result)
+	w.Stop()
 }

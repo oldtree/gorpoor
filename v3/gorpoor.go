@@ -54,22 +54,26 @@ func (w *Worker) Init(index int, taskLength int) {
 
 func (w *Worker) Start() {
 	defer func() {
-		log.Printf("worker [%d] is end \n", w.WorkerId)
 		w.Stop()
 	}()
 	var err error
 	for {
 		select {
 		case <-w.StopChan:
-			w.Stop()
-			return
-		case t := <-w.TaskList:
-			err = t.Exec()
-			if err != nil {
-				log.Println("exec task failed : ", err.Error())
+			goto END
+		case t, ok := <-w.TaskList:
+			if ok {
+				err = t.Exec()
+				if err != nil {
+					log.Println("exec task failed : ", err.Error())
+				}
+			} else {
+				goto END
 			}
 		}
 	}
+END:
+	return
 }
 
 func (w *Worker) Stop() {
@@ -121,19 +125,26 @@ func (w *WorkerPool) AddTask(task Tasker) {
 func (w *WorkerPool) Start() {
 	atomic.StoreInt64(&w.Status, STATUS_START)
 	defer func() {
-		log.Println("work pool is end")
+		if atomic.LoadInt64(&w.Status) == STATUS_STOP {
+			return
+		} else {
+			w.Stop()
+		}
 	}()
 	for {
 		select {
 		case <-w.StopChan:
-			goto END_POOL
-		case t := <-w.TaskList:
-			index := randomWorld.Int31n(int32(w.WorkNumber))
-			w.WorkSlice[int(index)].TaskList <- t
+			goto END
+		case t, ok := <-w.TaskList:
+			if ok && t != nil {
+				index := randomWorld.Int31n(int32(w.WorkNumber))
+				w.WorkSlice[int(index)].TaskList <- t
+			} else {
+				goto END
+			}
 		}
 	}
-END_POOL:
-	log.Println("work pool is end")
+END:
 	return
 }
 

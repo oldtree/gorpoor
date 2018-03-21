@@ -54,7 +54,6 @@ func (w *Worker) Init(index int) {
 
 func (w *Worker) Start() {
 	defer func() {
-		//log.Println("stop worker ", w.WorkerId)
 		w.Stop()
 		return
 	}()
@@ -70,8 +69,11 @@ func (w *Worker) Start() {
 				if err != nil {
 					log.Println("task exec error : ", err.Error())
 				}
+				w.WorkerBackChan <- w
+			} else {
+				goto END
 			}
-			w.WorkerBackChan <- w
+
 		}
 	}
 END:
@@ -130,6 +132,8 @@ func (w *WorkerPool) Start() {
 			worker, ok := <-w.Worker
 			if ok && worker != nil {
 				worker.TaskChan <- t
+			} else {
+				goto END
 			}
 		}
 	}
@@ -154,7 +158,7 @@ func (w *WorkerPool) Stop() {
 func (w *WorkerPool) AddTask(t Tasker) {
 	w.Protect.Lock()
 	defer w.Protect.Unlock()
-	if atomic.LoadInt64(&w.Status) != STATUS_RUNNING {
+	if atomic.LoadInt64(&w.Status) == STATUS_STOP {
 		return
 	}
 	w.TaskList <- t
