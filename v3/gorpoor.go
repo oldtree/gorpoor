@@ -48,8 +48,8 @@ type Worker struct {
 func (w *Worker) Init(index int, taskLength int) {
 	w.WorkerId = int64(index)
 	w.TaskList = make(chan Tasker, taskLength)
-	atomic.StoreInt64(&w.Status, STATUS_INIT)
 	w.Wg.Add(1)
+	atomic.StoreInt64(&w.Status, STATUS_INIT)
 }
 
 func (w *Worker) Start() {
@@ -104,10 +104,12 @@ func (w *WorkerPool) Init(number int, taskLength int) {
 	w.StopChan = make(chan struct{}, 1)
 	w.TaskList = make(chan Tasker, taskLength)
 	for index, _ := range w.WorkSlice {
-		w.WorkSlice[index] = new(Worker)
-		w.WorkSlice[index].Wg = w.Wg
-		w.WorkSlice[index].Init(index, taskLength)
-		go w.WorkSlice[index].Start()
+		newWorker := new(Worker)
+		newWorker.Wg = w.Wg
+		newWorker.Init(index, taskLength)
+		newWorker.StopChan = w.StopChan
+		w.WorkSlice[index] = newWorker
+		go newWorker.Start()
 	}
 	atomic.StoreInt64(&w.Status, STATUS_INIT)
 	return
