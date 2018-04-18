@@ -1,0 +1,97 @@
+{
+/*
+	 // Place your snippets for Go here. Each snippet is defined under a snippet name and has a prefix, body and 
+	 // description. The prefix is what is used to trigger the snippet and the body will be expanded and inserted. Possible variables are:
+	 // $1, $2 for tab stops, ${id} and ${id:label} and ${1:label} for variables. Variables with the same id are connected.
+	 // Example:
+	 "Print to console": {
+		"prefix": "log",
+		"body": [
+			"console.log('$1');",
+			"$2"
+		],
+		"description": "Log output to console"
+	}
+*/
+    "return":{
+		"prefix": "re",
+		"body": "return",
+		"description": "return content"
+	},
+	"for key ,value:":{
+		"prefix":"for k",
+		"body": "for key,value:=range {\n\n}",
+		"description": "for range key,value"
+	},
+	"for select range":{
+		"prefix": "for s",
+		"body": "for{\n select {\n\n} \n}",
+		"description": "for select statement"
+	},
+	"defer recover":{
+		"prefix": "defer r",
+		"body": "defer func() { \nif re := recover(); re != nil {\nlog.Error(\"recover panic : \", re)\n}\n}()",
+		"description": "defer recover function"
+	},
+	"make map":{
+		"prefix": "make m",
+		"body": "make(map[interface{}]interface{})",
+		"description": "make map"
+	},
+	"comment":{
+		"prefix": "comment",
+		"body": "/*******************\n\n\n\n*********************/",
+		"description": "user comment"		
+	},
+	"copyright":{
+		"prefix": "copyright",
+		"body": "// Copyright 2016 The Grapes. All rights reserved.\n// Use of this source code is governed by a BSD-style\n// license that can be found in the LICENSE file.",
+		"description": "Copyright declare"
+	},
+	"if m":{
+		"prefix": "if m",
+		"body": "if value,ok:= map[interface{}]interface{};ok{ \r\n  }",
+		"description": "判断map并生成if语句"
+	},
+	"if hachha":{
+		"prefix": "if chan",
+		"body": "if value ,ok :=range <-chan ;ok{ \r\n  }",
+		"description": ""
+	},
+
+	"signal":{
+		"prefix": "signal",
+		"body": [
+		"sc := make(chan os.Signal, 1)",	
+		"signal.Notify(sc,",
+			"syscall.SIGINT,",
+			"syscall.SIGTERM,",
+			"syscall.SIGQUIT,",
+		")",
+		"<-sc"
+		]
+	},
+
+	"for chan":{
+		"prefix": "for chan",
+		"body": [
+			"for ok,value:=range <- value chan;ok{",
+				//here to do
+			"}"
+		],
+		"description": "for chan loop"
+	},
+
+	"switch":{
+			"prefix": "switch e",
+			"body": "switch e:=e.(type){\n     default:\n // error is nil \n       case error:\n \\error os non-nil \n return e \n }",
+			"description": "根据error.(type)来判定错误的处理方式"
+	},
+
+	"package mo":{
+		"prefix": "package mo",
+		"body": "",
+		"description": ""
+	}
+	
+}
